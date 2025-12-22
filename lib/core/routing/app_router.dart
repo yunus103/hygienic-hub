@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../features/reviews/presentation/add_review_screen.dart';
+import '../../features/map/presentation/place_search_screen.dart';
 
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
@@ -27,7 +28,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = state.pathParameters['id']!;
           return ToiletDetailScreen(
-            placeId: id,
+            toiletId: id,
           ); // ismini sonra toiletId yaparsın
         },
       ),
@@ -38,6 +39,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final id = state.pathParameters['id']!;
           return AddReviewScreen(toiletId: id);
         },
+      ),
+      GoRoute(
+        path: '/search',
+        builder: (context, state) => const PlaceSearchScreen(),
       ),
     ],
   );

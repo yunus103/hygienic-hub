@@ -7,12 +7,13 @@ import '../../toilets/data/toilets_repository.dart';
 
 class MapScreen extends StatelessWidget {
   const MapScreen({super.key});
+  static int _counter = 1;
 
   Future<void> _createFakeToiletAndGo(BuildContext context) async {
     final repo = ToiletsRepository(FirebaseFirestore.instance);
     final uid = FirebaseAuth.instance.currentUser!.uid;
 
-    const placeId = 'fake_place_1';
+    final placeId = 'fake_place_${_counter++}';
 
     await repo.createIfNotExists(
       id: placeId,
@@ -33,9 +34,19 @@ class MapScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Map')),
       body: Center(
-        child: ElevatedButton(
-          onPressed: () => _createFakeToiletAndGo(context),
-          child: const Text('Create Fake Toilet → Detail'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton(
+              onPressed: () => _createFakeToiletAndGo(context),
+              child: const Text('Create Fake Toilet → Detail'),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: () => context.go('/search'),
+              child: const Text('Search Place'),
+            ),
+          ],
         ),
       ),
     );

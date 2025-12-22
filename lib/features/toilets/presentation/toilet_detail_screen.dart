@@ -4,12 +4,12 @@ import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ToiletDetailScreen extends StatelessWidget {
-  final String placeId;
-  const ToiletDetailScreen({super.key, required this.placeId});
+  final String toiletId;
+  const ToiletDetailScreen({super.key, required this.toiletId});
 
   @override
   Widget build(BuildContext context) {
-    final ref = FirebaseFirestore.instance.collection('toilets').doc(placeId);
+    final ref = FirebaseFirestore.instance.collection('toilets').doc(toiletId);
 
     return Scaffold(
       appBar: AppBar(
@@ -17,7 +17,7 @@ class ToiletDetailScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.rate_review),
-            onPressed: () => context.push('/toilet/$placeId/add-review'),
+            onPressed: () => context.push('/toilet/$toiletId/add-review'),
           ),
         ],
       ),
@@ -33,7 +33,7 @@ class ToiletDetailScreen extends StatelessWidget {
 
           final doc = snapshot.data;
           if (doc == null || !doc.exists) {
-            return Center(child: Text('Toilet not found: $placeId'));
+            return Center(child: Text('Toilet not found: $toiletId'));
           }
 
           final data = doc.data()!;
@@ -71,7 +71,7 @@ class ToiletDetailScreen extends StatelessWidget {
                   child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     stream: FirebaseFirestore.instance
                         .collection('toilets')
-                        .doc(placeId)
+                        .doc(toiletId)
                         .collection('reviews')
                         .orderBy('createdAt', descending: true)
                         .snapshots(),
