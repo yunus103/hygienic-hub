@@ -78,7 +78,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
       );
 
       if (mounted) {
-        context.go('/toilet/${details.placeId}');
+        context.push('/toilet/${details.placeId}');
       }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());

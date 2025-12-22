@@ -25,7 +25,8 @@ class MapScreen extends StatelessWidget {
     );
 
     if (context.mounted) {
-      context.go('/toilet/$placeId');
+      // CHANGED: Use push instead of go to keep Back Button
+      context.push('/toilet/$placeId');
     }
   }
 
@@ -43,7 +44,8 @@ class MapScreen extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             ElevatedButton(
-              onPressed: () => context.go('/search'),
+              // CHANGED: Use push instead of go
+              onPressed: () => context.push('/search'),
               child: const Text('Search Place'),
             ),
           ],

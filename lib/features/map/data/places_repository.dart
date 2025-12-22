@@ -20,12 +20,16 @@ class PlaceDetails {
   final String name;
   final double lat;
   final double lng;
+  final String? address;
+  final String? photoReference;
 
   PlaceDetails({
     required this.placeId,
     required this.name,
     required this.lat,
     required this.lng,
+    this.address,
+    this.photoReference,
   });
 }
 
@@ -44,7 +48,7 @@ class PlacesRepository {
       {
         'input': input,
         'key': apiKey,
-        // Türkiye odaklı istersen:
+        // Optional: Restrict to Turkey or current region if needed
         'components': 'country:tr',
         'language': 'tr',
       },
@@ -64,11 +68,13 @@ class PlacesRepository {
   }
 
   Future<PlaceDetails> fetchDetails(String placeId) async {
-    final uri = Uri.https(
-      'maps.googleapis.com',
-      '/maps/api/place/details/json',
-      {'place_id': placeId, 'fields': 'place_id,name,geometry', 'key': apiKey},
-    );
+    // Requesting place_id, name, geometry, formatted_address, and photos
+    final uri =
+        Uri.https('maps.googleapis.com', '/maps/api/place/details/json', {
+          'place_id': placeId,
+          'fields': 'place_id,name,geometry,formatted_address,photos',
+          'key': apiKey,
+        });
 
     final res = await http.get(uri);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -80,12 +86,33 @@ class PlacesRepository {
     }
 
     final result = body['result'] as Map<String, dynamic>;
-    final loc = (((result['geometry'] as Map)['location'] as Map));
+    final loc = result['geometry']['location'];
+
+    // Extract photo reference if available
+    String? photoRef;
+    if (result['photos'] != null) {
+      final photos = result['photos'] as List;
+      if (photos.isNotEmpty) {
+        photoRef = photos.first['photo_reference'] as String;
+      }
+    }
+
     return PlaceDetails(
       placeId: result['place_id'] as String,
       name: result['name'] as String,
       lat: (loc['lat'] as num).toDouble(),
       lng: (loc['lng'] as num).toDouble(),
+      address: result['formatted_address'] as String?,
+      photoReference: photoRef,
     );
+  }
+
+  /// Helper to construct the photo URL
+  String photoUrl(String reference, {int maxWidth = 600}) {
+    return Uri.https('maps.googleapis.com', '/maps/api/place/photo', {
+      'maxwidth': maxWidth.toString(),
+      'photo_reference': reference,
+      'key': apiKey,
+    }).toString();
   }
 }
