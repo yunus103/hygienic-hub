@@ -78,6 +78,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
       );
 
       if (mounted) {
+        // Changed from go -> push to preserve back navigation
         context.push('/toilet/${details.placeId}');
       }
     } catch (e) {
@@ -99,9 +100,20 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
               controller: _ctrl,
               decoration: const InputDecoration(
                 labelText: 'Search (cafe, mall, gas station...)',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
               ),
               onChanged: _onChanged,
             ),
+            const SizedBox(height: 12),
+
+            // Manual Add Button
+            OutlinedButton.icon(
+              onPressed: () => context.push('/add-manual-toilet'),
+              icon: const Icon(Icons.add_location_alt),
+              label: const Text("Can't find it? Add Manually"),
+            ),
+
             const SizedBox(height: 12),
             if (_loading) const LinearProgressIndicator(),
             if (_error != null)
@@ -110,12 +122,15 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
                 child: Text(_error!, style: const TextStyle(color: Colors.red)),
               ),
             const SizedBox(height: 12),
+
             Expanded(
-              child: ListView.builder(
+              child: ListView.separated(
                 itemCount: _results.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
                 itemBuilder: (context, i) {
                   final r = _results[i];
                   return ListTile(
+                    leading: const Icon(Icons.place, color: Colors.grey),
                     title: Text(r.description),
                     onTap: () => _select(r),
                   );

@@ -8,6 +8,7 @@ import '../../features/map/presentation/place_search_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
 import '../../features/toilets/presentation/toilet_detail_screen.dart';
+import '../../features/toilets/presentation/add_manual_toilet_screen.dart'; // Import this
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -27,12 +28,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/toilet/:id',
         builder: (context, state) {
           final id = state.pathParameters['id']!;
-          return ToiletDetailScreen(
-            toiletId: id,
-          ); // ismini sonra toiletId yaparsın
+          return ToiletDetailScreen(toiletId: id);
         },
       ),
-
       GoRoute(
         path: '/toilet/:id/add-review',
         builder: (context, state) {
@@ -43,6 +41,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/search',
         builder: (context, state) => const PlaceSearchScreen(),
+      ),
+      // New Route
+      GoRoute(
+        path: '/add-manual-toilet',
+        builder: (context, state) => const AddManualToiletScreen(),
       ),
     ],
   );
