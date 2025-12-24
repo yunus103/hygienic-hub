@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../map/data/places_repository.dart';
 import '../../../../core/theme/app_theme.dart'; // AppTheme sınıfını kullandığımızdan emin olalım
+import 'package:url_launcher/url_launcher.dart';
 
 class ToiletDetailScreen extends StatefulWidget {
   final String toiletId;
@@ -55,6 +56,26 @@ class _ToiletDetailScreenState extends State<ToiletDetailScreen> {
       return '${(distanceInMeters / 1000).toStringAsFixed(1)} km';
     }
     return '${distanceInMeters.toInt()}m';
+  }
+
+  Future<void> _openMaps(double lat, double lng) async {
+    // Google Maps URL şeması (Yürüme modu: travelmode=walking)
+    final uri = Uri.parse(
+      "https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=walking",
+    );
+
+    try {
+      // Harici uygulamada açmaya zorla
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        // Başarısız olursa tarayıcıda açmayı dene
+        await launchUrl(uri);
+      }
+    } catch (e) {
+      debugPrint("Harita açılamadı: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Harita uygulaması açılamadı.')),
+      );
+    }
   }
 
   @override
@@ -578,6 +599,26 @@ class _ToiletDetailScreenState extends State<ToiletDetailScreen> {
             },
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          FirebaseFirestore.instance
+              .collection('toilets')
+              .doc(widget.toiletId)
+              .get()
+              .then((doc) {
+                if (doc.exists) {
+                  final d = doc.data()!;
+                  final l = (d['lat'] as num).toDouble();
+                  final lg = (d['lng'] as num).toDouble();
+                  _openMaps(l, lg);
+                }
+              });
+        },
+        label: const Text("Yol Tarifi"),
+        icon: const Icon(Icons.directions_walk),
+        backgroundColor: AppTheme.primary, // Temadan mavi renk
+        foregroundColor: Colors.white,
       ),
     );
   }

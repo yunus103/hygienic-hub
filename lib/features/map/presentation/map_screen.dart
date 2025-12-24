@@ -5,7 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../map/data/places_repository.dart';
-import 'filter_screen.dart';
+import 'filter_screen.dart'; // Filtre ekranını import etmeyi unutma
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -15,25 +15,31 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  // Başlangıç Konumu
   static const _initialCameraPosition = CameraPosition(
     target: LatLng(41.0082, 28.9784),
     zoom: 13,
   );
 
-  ToiletFilter _currentFilter = ToiletFilter();
+  // Controller & State
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
+  List<Map<String, dynamic>> _filteredToilets =
+      []; // Listeleme için filtrelenmiş veri
+
   bool _permissionGranted = false;
+  bool _isListView = false; // Harita mı Liste mi?
+
+  // Filtre State
+  ToiletFilter _currentFilter = ToiletFilter();
 
   // Seçili Tuvalet (Preview Card İçin)
   Map<String, dynamic>? _selectedToilet;
   String? _selectedToiletId;
 
-  // Google Places Fotoğrafı için repository
+  // Repository & Veriler
   late final PlacesRepository _placesRepo;
   PlaceDetails? _selectedPlaceDetails;
-
-  // Kullanıcı Konumu (Mesafe hesaplamak için)
   Position? _userPosition;
 
   @override
@@ -43,7 +49,8 @@ class _MapScreenState extends State<MapScreen> {
     _placesRepo = PlacesRepository(apiKey);
 
     _checkLocationPermission();
-    _fetchToiletsAndCreateMarkers();
+    // Verileri dinlemeye başla
+    _fetchToilets();
   }
 
   Future<void> _checkLocationPermission() async {
@@ -61,7 +68,11 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) setState(() => _permissionGranted = true);
 
       final pos = await Geolocator.getCurrentPosition();
-      if (mounted) setState(() => _userPosition = pos);
+      if (mounted) {
+        setState(() => _userPosition = pos);
+        // Konum bulununca listeyi tekrar sırala
+        _sortToiletsByDistance();
+      }
 
       _mapController?.animateCamera(
         CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 15),
@@ -71,62 +82,52 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // --- MARKER LOGIC ---
-  void _fetchToiletsAndCreateMarkers() {
-    // Eski listener varsa kapatmak iyi olur ama MVP'de üstüne yazıyoruz, sorun değil.
+  // --- VERİ ÇEKME, FİLTRELEME VE SIRALAMA ---
+  void _fetchToilets() {
     FirebaseFirestore.instance.collection('toilets').snapshots().listen((
       snapshot,
     ) {
+      final List<Map<String, dynamic>> rawList = [];
       final newMarkers = <Marker>{};
-
-      // Debug için
-      // print("Filtre: minRating=${_currentFilter.minRating}, free=${_currentFilter.onlyFree}");
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
+        data['docId'] = doc.id; // ID'yi dataya ekle
 
-        // --- FİLTRELEME MANTIĞI ---
-
-        // 1. Puan Filtresi
+        // --- 1. FİLTRELEME ---
         final ratingSum = (data['ratingSum'] ?? 0) as num;
         final ratingCount = (data['ratingCount'] ?? 0) as num;
         final avg = ratingCount == 0
             ? 0.0
             : (ratingSum / ratingCount).toDouble();
+        data['avgRating'] = avg; // Hesaplanan puanı sakla
 
         if (avg < _currentFilter.minRating) continue;
 
-        // 2. Olanaklar (Özellikler reportedFeatures veya verifiedFeatures içinde olabilir)
-        // Şimdilik basitleştirilmiş olarak 'reportedFeatures' kullanıyoruz (kullanıcı beyanı)
         final features =
             data['reportedFeatures'] as Map<String, dynamic>? ?? {};
 
         if (_currentFilter.onlyAccessible) {
           if (features['isAccessible'] != true) continue;
         }
-
         if (_currentFilter.hasBabyChange) {
           if (features['hasBabyChange'] != true) continue;
         }
-
-        // 3. Ücret Durumu
         if (!_currentFilter.showAllPrices) {
           final isFree = features['isFree'] == true;
-          if (_currentFilter.onlyFree && !isFree)
-            continue; // Sadece ücretsiz istiyor ama bu ücretli
-          if (!_currentFilter.onlyFree && isFree)
-            continue; // Sadece ücretli istiyor ama bu ücretsiz
+          if (_currentFilter.onlyFree && !isFree) continue;
+          if (!_currentFilter.onlyFree && isFree) continue;
         }
 
-        // --- FİLTREDEN GEÇTİ, MARKER EKLE ---
-
-        final id = data['id'] as String? ?? doc.id;
+        // --- 2. LİSTEYE EKLE ---
         final lat = (data['lat'] as num?)?.toDouble();
         final lng = (data['lng'] as num?)?.toDouble();
 
         if (lat == null || lng == null) continue;
 
-        // Renk Ayarı
+        rawList.add(data);
+
+        // --- 3. MARKER OLUŞTUR ---
         double hue;
         if (avg >= 4.0)
           hue = BitmapDescriptor.hueGreen;
@@ -135,6 +136,7 @@ class _MapScreenState extends State<MapScreen> {
         else
           hue = BitmapDescriptor.hueRed;
 
+        final id = data['id'] as String? ?? doc.id;
         if (id.startsWith('manual_')) hue = BitmapDescriptor.hueAzure;
 
         final marker = Marker(
@@ -146,18 +148,53 @@ class _MapScreenState extends State<MapScreen> {
         newMarkers.add(marker);
       }
 
-      if (mounted) setState(() => _markers = newMarkers);
+      if (mounted) {
+        setState(() {
+          _filteredToilets = rawList;
+          _markers = newMarkers;
+        });
+        // Veri geldikten sonra mesafe sıralaması yap
+        _sortToiletsByDistance();
+      }
     });
   }
 
+  void _sortToiletsByDistance() {
+    if (_userPosition == null || _filteredToilets.isEmpty) return;
+
+    _filteredToilets.sort((a, b) {
+      final latA = (a['lat'] as num).toDouble();
+      final lngA = (a['lng'] as num).toDouble();
+      final latB = (b['lat'] as num).toDouble();
+      final lngB = (b['lng'] as num).toDouble();
+
+      final distA = Geolocator.distanceBetween(
+        _userPosition!.latitude,
+        _userPosition!.longitude,
+        latA,
+        lngA,
+      );
+      final distB = Geolocator.distanceBetween(
+        _userPosition!.latitude,
+        _userPosition!.longitude,
+        latB,
+        lngB,
+      );
+
+      return distA.compareTo(distB);
+    });
+
+    if (mounted) setState(() {}); // Sıralama bitince UI güncelle
+  }
+
+  // --- UI EVENTS ---
   void _onMarkerTapped(String id, Map<String, dynamic> data) async {
     setState(() {
       _selectedToiletId = id;
       _selectedToilet = data;
-      _selectedPlaceDetails = null; // Önce sıfırla
+      _selectedPlaceDetails = null;
     });
 
-    // Eğer Google Place ise fotoğrafını çek
     if (!id.startsWith('manual_')) {
       try {
         final details = await _placesRepo.fetchDetails(id);
@@ -183,25 +220,24 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Klavye açılınca UI bozulmasın
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // 1. HARİTA KATMANI
-          GoogleMap(
-            initialCameraPosition: _initialCameraPosition,
-            markers: _markers,
-            myLocationEnabled: _permissionGranted,
-            myLocationButtonEnabled: false, // Kendi butonumuzu yapacağız
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            onMapCreated: (ctrl) => _mapController = ctrl,
-            onTap: (_) => setState(
-              () => _selectedToilet = null,
-            ), // Boşluğa basınca seçimi kaldır
-          ),
+          // 1. İÇERİK (Harita veya Liste)
+          _isListView
+              ? _buildListView()
+              : GoogleMap(
+                  initialCameraPosition: _initialCameraPosition,
+                  markers: _markers,
+                  myLocationEnabled: _permissionGranted,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  mapToolbarEnabled: false,
+                  onMapCreated: (ctrl) => _mapController = ctrl,
+                  onTap: (_) => setState(() => _selectedToilet = null),
+                ),
 
-          // 2. ÜST ARAMA ÇUBUĞU (Floating Search Bar)
+          // 2. ÜST ARAMA VE FİLTRE ÇUBUĞU
           Positioned(
             top: 50,
             left: 16,
@@ -259,9 +295,24 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.tune, color: AppTheme.textDark),
+                    icon: Stack(
+                      alignment: Alignment.topRight,
+                      children: [
+                        const Icon(Icons.tune, color: AppTheme.textDark),
+                        // Filtre aktifse küçük bir nokta koyabiliriz
+                        if (_currentFilter.minRating > 0 ||
+                            _currentFilter.onlyFree)
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    ),
                     onPressed: () async {
-                      // 1. Filtre ekranını aç ve sonucu bekle
                       final result = await Navigator.push<ToiletFilter>(
                         context,
                         MaterialPageRoute(
@@ -269,14 +320,9 @@ class _MapScreenState extends State<MapScreen> {
                               FilterScreen(currentFilter: _currentFilter),
                         ),
                       );
-
-                      // 2. Sonuç varsa filtreyi güncelle ve haritayı yenile
                       if (result != null) {
-                        setState(() {
-                          _currentFilter = result;
-                        });
-
-                        _fetchToiletsAndCreateMarkers(); // Listener'ı yeniden başlatır ve yeni filtreyle okur.
+                        setState(() => _currentFilter = result);
+                        _fetchToilets(); // Listeyi yenile
                       }
                     },
                   ),
@@ -285,7 +331,9 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
 
-          // 3. ALT KONTROLLER VE PREVIEW CARD
+          // 3. ALT KISIM (Preview Card & Kontroller)
+          // Liste modundaysak Preview Card göstermeye gerek yok, direkt listede var.
+          // Sadece butonları gösterelim.
           Positioned(
             bottom: 30,
             left: 16,
@@ -294,17 +342,18 @@ class _MapScreenState extends State<MapScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // --- PREVIEW CARD (Seçim Varsa Göster) ---
-                if (_selectedToilet != null) _buildPreviewCard(),
+                // Preview Card (Sadece Harita modunda ve seçim varsa)
+                if (!_isListView && _selectedToilet != null)
+                  _buildPreviewCard(_selectedToilet!),
 
                 const SizedBox(height: 16),
 
-                // --- ALT BUTONLAR (Toggle & MyLocation) ---
+                // Butonlar
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Harita / Liste Geçişi
+                    // Geçiş Butonu
                     Container(
                       height: 48,
                       decoration: BoxDecoration(
@@ -322,29 +371,32 @@ class _MapScreenState extends State<MapScreen> {
                         children: [
                           _ViewToggleButton(
                             label: 'Harita',
-                            isActive: true,
-                            onTap: () {},
+                            isActive: !_isListView,
+                            onTap: () => setState(() => _isListView = false),
                           ),
                           _ViewToggleButton(
                             label: 'Liste',
-                            isActive: false,
-                            onTap: () => context.push(
-                              '/search',
-                            ), // Şimdilik aramaya gitsin
+                            isActive: _isListView,
+                            onTap: () {
+                              setState(() => _isListView = true);
+                              _selectedToilet =
+                                  null; // Listeye geçince seçimi sıfırla
+                            },
                           ),
                         ],
                       ),
                     ),
 
-                    // Konum Butonu (FAB)
-                    FloatingActionButton(
-                      onPressed: _checkLocationPermission,
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppTheme.primary,
-                      elevation: 4,
-                      shape: const CircleBorder(),
-                      child: const Icon(Icons.my_location, size: 28),
-                    ),
+                    // Konum Butonu (Sadece Harita modunda anlamlı)
+                    if (!_isListView)
+                      FloatingActionButton(
+                        onPressed: _checkLocationPermission,
+                        backgroundColor: Colors.white,
+                        foregroundColor: AppTheme.primary,
+                        elevation: 4,
+                        shape: const CircleBorder(),
+                        child: const Icon(Icons.my_location, size: 28),
+                      ),
                   ],
                 ),
               ],
@@ -352,23 +404,150 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ],
       ),
-      // Manuel Ekle Butonu (Gizli bir şekilde ekleyebiliriz veya arama ekranına taşımıştık zaten)
-      // Şimdilik tasarımda olmadığı için kaldırdım, kullanıcı 'Liste' veya 'Arama'dan ekleyebilir.
     );
   }
 
-  Widget _buildPreviewCard() {
-    final t = _selectedToilet!;
+  // --- LİSTE GÖRÜNÜMÜ ---
+  Widget _buildListView() {
+    if (_filteredToilets.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            const Text(
+              "Bu kriterlere uygun tuvalet bulunamadı.",
+              style: TextStyle(color: Colors.grey),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      color: AppTheme.bgLight,
+      // Üstteki arama çubuğunun altında kalmasın diye padding veriyoruz
+      padding: const EdgeInsets.only(
+        top: 110,
+        bottom: 100,
+        left: 16,
+        right: 16,
+      ),
+      child: ListView.separated(
+        padding: EdgeInsets.zero,
+        itemCount: _filteredToilets.length,
+        separatorBuilder: (context, index) => const SizedBox(height: 12),
+        itemBuilder: (context, index) {
+          final toilet = _filteredToilets[index];
+          return _buildToiletListItem(toilet);
+        },
+      ),
+    );
+  }
+
+  Widget _buildToiletListItem(Map<String, dynamic> t) {
     final name = t['name'] ?? 'Toilet';
-    final ratingSum = (t['ratingSum'] ?? 0) as num;
-    final ratingCount = (t['ratingCount'] ?? 0) as num;
-    final avg = ratingCount == 0 ? 0.0 : (ratingSum / ratingCount).toDouble();
+    final avg = (t['avgRating'] as double).toStringAsFixed(1);
+    final type = t['type'] ?? 'Genel';
 
     final lat = (t['lat'] as num).toDouble();
     final lng = (t['lng'] as num).toDouble();
     final distStr = _calculateDistance(lat, lng);
 
+    final id = t['id'] as String? ?? t['docId'];
+
+    return GestureDetector(
+      onTap: () => context.push('/toilet/$id'),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Sol İkon (Türe göre değişebilir)
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(Icons.wc, color: AppTheme.primary, size: 28),
+            ),
+            const SizedBox(width: 12),
+            // Orta Bilgiler
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: AppTheme.textDark,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "$type $distStr",
+                    style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            // Sağ Puan
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.star, size: 14, color: Colors.amber),
+                  const SizedBox(width: 4),
+                  Text(
+                    avg,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.amber[900],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- HARİTA PREVIEW KARTI (Eski metod, biraz revize edildi) ---
+  Widget _buildPreviewCard(Map<String, dynamic> t) {
+    // ... Eski kodun aynısı veya benzeri ...
+    // Sadece _selectedPlaceDetails fotoğrafını kullanır.
+
+    final name = t['name'] ?? 'Toilet';
+    final avg = (t['avgRating'] as double).toStringAsFixed(1);
+    final lat = (t['lat'] as num).toDouble();
+    final lng = (t['lng'] as num).toDouble();
+    final distStr = _calculateDistance(lat, lng);
     final photoRef = _selectedPlaceDetails?.photoReference;
+    final id = t['id'] as String? ?? t['docId'];
 
     return Container(
       width: double.infinity,
@@ -387,7 +566,6 @@ class _MapScreenState extends State<MapScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Sol Taraf: Bilgiler
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -406,13 +584,9 @@ class _MapScreenState extends State<MapScreen> {
                 Row(
                   children: [
                     Text(
-                      avg.toStringAsFixed(1),
+                      avg,
                       style: TextStyle(
-                        color: avg >= 4
-                            ? AppTheme.ratingHigh
-                            : (avg >= 2.5
-                                  ? AppTheme.ratingMedium
-                                  : AppTheme.ratingLow),
+                        color: AppTheme.ratingMedium,
                         fontWeight: FontWeight.bold,
                         fontSize: 14,
                       ),
@@ -427,7 +601,7 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 const SizedBox(height: 12),
                 InkWell(
-                  onTap: () => context.push('/toilet/$_selectedToiletId'),
+                  onTap: () => context.push('/toilet/$id'),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -451,7 +625,6 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          // Sağ Taraf: Resim
           Container(
             width: 80,
             height: 80,
