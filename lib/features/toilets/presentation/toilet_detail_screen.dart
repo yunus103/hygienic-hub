@@ -141,6 +141,13 @@ class _ToiletDetailScreenState extends State<ToiletDetailScreen> {
                       ? verifiedFeatures['isAccessible'] == true
                       : accessibleVotes > 0;
 
+                  final type = fsData['type'] as String? ?? 'Public';
+                  final openTime = fsData['openingTime'] as String?;
+                  final closeTime = fsData['closingTime'] as String?;
+                  final hoursStr = (openTime != null && closeTime != null)
+                      ? "$openTime - $closeTime"
+                      : "Open 24/7";
+
                   return CustomScrollView(
                     slivers: [
                       // --- 1. Top Bar (Sticky) ---
@@ -261,6 +268,12 @@ class _ToiletDetailScreenState extends State<ToiletDetailScreen> {
                                 label:
                                     "Açık", // We can add open/close logic later
                               ),
+                              _SummaryChip(
+                                icon: Icons.access_time,
+                                color: Colors.green,
+                                bgColor: Colors.green.shade50,
+                                label: hoursStr,
+                              ),
                             ],
                           ),
                         ),
@@ -362,6 +375,24 @@ class _ToiletDetailScreenState extends State<ToiletDetailScreen> {
                                         label: "Soap/Supplies",
                                         color: _primaryColor,
                                       ),
+                                    if (isAccessible)
+                                      _FeatureRow(
+                                        icon: Icons.accessible,
+                                        label: "Accessible",
+                                        color: _primaryColor,
+                                      ),
+                                    if (hasBaby)
+                                      _FeatureRow(
+                                        icon: Icons.baby_changing_station,
+                                        label: "Baby Care",
+                                        color: _primaryColor,
+                                      ),
+                                    // Also show Type
+                                    _FeatureRow(
+                                      icon: Icons.category,
+                                      label: type,
+                                      color: Colors.grey,
+                                    ),
                                   ],
                                 ),
                               ],

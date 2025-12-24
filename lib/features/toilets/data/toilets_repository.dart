@@ -12,8 +12,16 @@ class ToiletsRepository {
     required double lng,
     required String createdBy,
     required String source,
+
+    // --- New Fields ---
+    String? type, // Mall, Restaurant, Park, etc.
+    String? openingTime, // e.g. "08:00"
+    String? closingTime, // e.g. "22:00"
+
+    // ------------------
     bool? isFree,
     bool? isAccessible,
+    bool? hasBabyChange, // Added based on design
   }) async {
     final docRef = _firestore.collection('toilets').doc(id);
     final snapshot = await docRef.get();
@@ -31,18 +39,18 @@ class ToiletsRepository {
         'createdAt': now,
         'ratingSum': 0,
         'ratingCount': 0,
-
-        // --- DOĞRULAMA MANTIĞI ---
-        // Kullanıcının eklediği tuvalet varsayılan olarak onaysızdır
         'verified': false,
-
-        // Admin'in onayladığı özellikler (Başlangıçta boş/null)
         'verifiedFeatures': null,
 
-        // Kullanıcının ilk eklerken beyan ettiği özellikler (Referans için)
+        // Metadata
+        'type': type,
+        'openingTime': openingTime,
+        'closingTime': closingTime,
+
         'reportedFeatures': {
           if (isFree != null) 'isFree': isFree,
           if (isAccessible != null) 'isAccessible': isAccessible,
+          if (hasBabyChange != null) 'hasBabyChange': hasBabyChange,
         },
       };
 
