@@ -42,6 +42,8 @@ class _MapScreenState extends State<MapScreen> {
   PlaceDetails? _selectedPlaceDetails;
   Position? _userPosition;
 
+  LatLng _centerPosition = const LatLng(41.0082, 28.9784);
+
   @override
   void initState() {
     super.initState();
@@ -221,6 +223,25 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       resizeToAvoidBottomInset: false,
+      floatingActionButton: !_isListView
+          ? Padding(
+              // Alt barın üstünde kalsın diye padding veriyoruz
+              padding: const EdgeInsets.only(bottom: 90),
+              child: FloatingActionButton(
+                onPressed: () {
+                  // O anki harita merkeziyle ekleme ekranına git
+                  context.push(
+                    '/add-manual-toilet',
+                    extra: _centerPosition, // Veriyi 'extra' ile gönderiyoruz
+                  );
+                },
+                backgroundColor: AppTheme.primary,
+                child: const Icon(Icons.add, color: Colors.white, size: 30),
+              ),
+            )
+          : null,
+      floatingActionButtonLocation:
+          FloatingActionButtonLocation.endDocked, // Sağ altta
       body: Stack(
         children: [
           // 1. İÇERİK (Harita veya Liste)
@@ -235,6 +256,9 @@ class _MapScreenState extends State<MapScreen> {
                   mapToolbarEnabled: false,
                   onMapCreated: (ctrl) => _mapController = ctrl,
                   onTap: (_) => setState(() => _selectedToilet = null),
+                  onCameraMove: (position) {
+                    _centerPosition = position.target; // Merkezi sürekli kaydet
+                  },
                 ),
 
           // 2. ÜST ARAMA VE FİLTRE ÇUBUĞU
@@ -259,7 +283,30 @@ class _MapScreenState extends State<MapScreen> {
                       ],
                     ),
                     child: InkWell(
-                      onTap: () => context.push('/search'),
+                      onTap: () async {
+                        // 1. Arama ekranına git ve sonucu bekle (Map<String, double> dönecek)
+                        // '/search' rotasının PlaceSearchScreen'e gittiğinden emin ol (router ayarlarında)
+                        final result = await context.push<Map<String, dynamic>>(
+                          '/search',
+                        );
+
+                        // 2. Eğer bir sonuç seçildiyse (result null değilse)
+                        if (result != null && _mapController != null) {
+                          final lat = result['lat']!;
+                          final lng = result['lng']!;
+
+                          // 3. Kamerayı oraya götür
+                          _mapController!.animateCamera(
+                            CameraUpdate.newLatLngZoom(
+                              LatLng(lat, lng),
+                              15, // Zoom seviyesi (Yakın)
+                            ),
+                          );
+
+                          // Opsiyonel: Kullanıcı anlasın diye debug yazısı
+                          debugPrint("Kamera taşındı: $lat, $lng");
+                        }
+                      },
                       borderRadius: BorderRadius.circular(12),
                       child: Row(
                         children: [
@@ -344,8 +391,12 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 // Preview Card (Sadece Harita modunda ve seçim varsa)
                 if (!_isListView && _selectedToilet != null)
-                  _buildPreviewCard(_selectedToilet!),
-
+                  Padding(
+                    // + Butonu (FAB) genelde 56px'dir.
+                    // 70px vererek butona değmemesini sağlıyoruz.
+                    padding: const EdgeInsets.only(right: 70),
+                    child: _buildPreviewCard(_selectedToilet!),
+                  ),
                 const SizedBox(height: 16),
 
                 // Butonlar
@@ -536,11 +587,8 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  // --- HARİTA PREVIEW KARTI (Eski metod, biraz revize edildi) ---
+  // --- HARİTA PREVIEW KARTI  ---
   Widget _buildPreviewCard(Map<String, dynamic> t) {
-    // ... Eski kodun aynısı veya benzeri ...
-    // Sadece _selectedPlaceDetails fotoğrafını kullanır.
-
     final name = t['name'] ?? 'Toilet';
     final avg = (t['avgRating'] as double).toStringAsFixed(1);
     final lat = (t['lat'] as num).toDouble();

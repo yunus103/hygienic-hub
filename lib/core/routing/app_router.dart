@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../features/reviews/presentation/add_review_screen.dart';
 import '../../features/map/presentation/place_search_screen.dart';
-
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
 import '../../features/toilets/presentation/toilet_detail_screen.dart';
@@ -45,7 +45,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // New Route
       GoRoute(
         path: '/add-manual-toilet',
-        builder: (context, state) => const AddManualToiletScreen(),
+        builder: (context, state) {
+          // Gelen 'extra' verisini LatLng olarak al
+          final latLng = state.extra as LatLng?;
+          return AddManualToiletScreen(initialLocation: latLng);
+        },
       ),
     ],
   );

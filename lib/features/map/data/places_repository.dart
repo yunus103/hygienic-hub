@@ -4,13 +4,26 @@ import 'package:http/http.dart' as http;
 class PlacePrediction {
   final String placeId;
   final String description;
+  final String mainText; // Örn: "Starbucks"
+  final String secondaryText; // Örn: "Kadıköy, İstanbul"
 
-  PlacePrediction({required this.placeId, required this.description});
+  PlacePrediction({
+    required this.placeId,
+    required this.description,
+    required this.mainText,
+    required this.secondaryText,
+  });
 
   factory PlacePrediction.fromJson(Map<String, dynamic> json) {
+    // Google yanıtında 'structured_formatting' içinde daha temiz metinler var
+    final struct = json['structured_formatting'] ?? {};
+
     return PlacePrediction(
-      placeId: json['place_id'] as String,
-      description: json['description'] as String,
+      placeId: json['place_id'] ?? '',
+      description: json['description'] ?? '',
+      // Eğer structured_formatting boşsa description'ı kullan (Hata almamak için)
+      mainText: struct['main_text'] ?? json['description'] ?? '',
+      secondaryText: struct['secondary_text'] ?? '',
     );
   }
 }

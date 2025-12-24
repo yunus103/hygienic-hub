@@ -7,21 +7,25 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../data/toilets_repository.dart';
 
 class AddManualToiletScreen extends StatefulWidget {
-  const AddManualToiletScreen({super.key});
+  final LatLng? initialLocation;
+
+  const AddManualToiletScreen({super.key, this.initialLocation});
 
   @override
   State<AddManualToiletScreen> createState() => _AddManualToiletScreenState();
 }
 
 class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
-  // Kontrolcüler
   final _nameCtrl = TextEditingController();
 
-  // Konum (Varsayılan: İstanbul)
-  LatLng _pickedLocation = const LatLng(41.0082, 28.9784);
+  // Konum
+  late LatLng _pickedLocation;
   GoogleMapController? _mapController;
 
-  // Yeni Alanlar
+  // Google Place ID (Eğer aramadan gelirse buraya kaydolacak)
+  String? _selectedGooglePlaceId;
+
+  // Form Alanları
   String _selectedType = 'Umumi';
   final List<String> _types = [
     'Umumi',
@@ -42,22 +46,91 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
   @override
   void initState() {
     super.initState();
-    _locateUser();
+    if (widget.initialLocation != null) {
+      _pickedLocation = widget.initialLocation!;
+    } else {
+      _pickedLocation = const LatLng(41.0082, 28.9784);
+      _locateUser(); // Sadece veri gelmediyse kullanıcıyı bulmaya çalış
+    }
   }
 
   Future<void> _locateUser() async {
+    // Eğer Google'dan bir yer seçildiyse kullanıcının konumuna gitme (seçimi bozma)
+    if (_selectedGooglePlaceId != null) return;
+
     try {
       final permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.always ||
           permission == LocationPermission.whileInUse) {
         final pos = await Geolocator.getCurrentPosition();
         if (mounted) {
-          final latLng = LatLng(pos.latitude, pos.longitude);
-          setState(() => _pickedLocation = latLng);
-          _mapController?.animateCamera(CameraUpdate.newLatLngZoom(latLng, 16));
+          _moveCamera(LatLng(pos.latitude, pos.longitude));
         }
       }
     } catch (_) {}
+  }
+
+  void _moveCamera(LatLng target) {
+    setState(() => _pickedLocation = target);
+    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(target, 16));
+  }
+
+  // --- İŞTE BU FONKSİYON EKSİKTİ: OTOMATİK DOLDURMA ---
+  Future<void> _searchPlace() async {
+    // Arama ekranını açıp sonucu (Map olarak) bekliyoruz
+    // Not: PlaceSearchScreen'den dönen veri: {placeId, name, lat, lng}
+    final result = await context.push<Map<String, dynamic>>('/search');
+
+    if (result != null) {
+      final placeId = result['placeId'] as String;
+      final name = result['name'] as String;
+      final lat = result['lat'] as double;
+      final lng = result['lng'] as double;
+
+      setState(() {
+        _selectedGooglePlaceId =
+            placeId; // ID'yi sakla (Duplicate kontrolü için)
+        _nameCtrl.text = name; // İSMİ OTOMATİK DOLDUR!
+        _pickedLocation = LatLng(lat, lng); // Konumu güncelle
+        _loading = false;
+
+        // İsme göre basit tür tahmini yapıyoruz (Kullanıcıya kolaylık olsun)
+        final lowerName = name.toLowerCase();
+        if (lowerName.contains('avm') ||
+            lowerName.contains('mall') ||
+            lowerName.contains('center')) {
+          _selectedType = 'AVM';
+        } else if (lowerName.contains('cafe') ||
+            lowerName.contains('kahve') ||
+            lowerName.contains('starbucks') ||
+            lowerName.contains('restoran')) {
+          _selectedType = 'Restoran';
+        } else if (lowerName.contains('cami')) {
+          _selectedType = 'Cami';
+        } else if (lowerName.contains('park')) {
+          _selectedType = 'Park';
+        } else if (lowerName.contains('opet') ||
+            lowerName.contains('shell') ||
+            lowerName.contains('bp')) {
+          _selectedType = 'Benzinlik';
+        }
+      });
+
+      // Haritayı oraya götür
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(_pickedLocation, 17),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Bilgiler '$name' için otomatik dolduruldu."),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _pickTime(bool isOpenTime) async {
@@ -81,7 +154,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
     }
   }
 
-  // TimeOfDay'i "08:00" formatına çevirir
   String _formatTime(TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
@@ -101,24 +173,31 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
     try {
       final uid = FirebaseAuth.instance.currentUser!.uid;
       final repo = ToiletsRepository(FirebaseFirestore.instance);
-      final manualId = 'manual_${DateTime.now().millisecondsSinceEpoch}';
+
+      // ID BELİRLEME MANTIĞI:
+      // Google'dan seçildiyse onun ID'sini kullan (Böylece aynı yeri 2 kere ekleyemezler)
+      // Yoksa manuel ID oluştur.
+      final docId =
+          _selectedGooglePlaceId ??
+          'manual_${DateTime.now().millisecondsSinceEpoch}';
+      final source = _selectedGooglePlaceId != null
+          ? 'google_places'
+          : 'manual';
 
       await repo.createIfNotExists(
-        id: manualId,
+        id: docId,
         name: _nameCtrl.text.trim(),
         lat: _pickedLocation.latitude,
         lng: _pickedLocation.longitude,
         createdBy: uid,
-        source: 'manual',
-
-        // Yeni alanlar
+        source: source,
         type: _selectedType,
         openingTime: _formatTime(_openTime),
         closingTime: _formatTime(_closeTime),
       );
 
       if (mounted) {
-        context.pushReplacement('/toilet/$manualId');
+        context.pushReplacement('/toilet/$docId');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Tuvalet başarıyla eklendi!')),
         );
@@ -132,16 +211,13 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Tasarım Renkleri
-    const Color primaryColor = Color(0xFF34C759); // Yeşil buton
-    const Color secondaryColor = Color(0xFF5AC8FA); // Mavi vurgular
+    const Color primaryColor = Color(0xFF34C759);
+    const Color secondaryColor = Color(0xFF5AC8FA);
     const Color bgColor = Color(0xFFF2F2F7);
-    const Color cardColor = Colors.white;
     const Color borderColor = Color(0xFFE5E5EA);
 
     return Scaffold(
       backgroundColor: bgColor,
-      // Klavye açıldığında haritanın ezilmesini önlemek için
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: bgColor,
@@ -166,10 +242,9 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
       ),
       body: Column(
         children: [
-          // --- BÖLÜM 1: İNTERAKTİF HARİTA (Üst Kısım) ---
-          // Kullanıcı haritayı kaydırarak konumu belirler (Eski mantık)
+          // --- HARİTA ---
           Expanded(
-            flex: 4, // Ekranın %40'ı harita
+            flex: 4,
             child: Stack(
               children: [
                 GoogleMap(
@@ -178,12 +253,15 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
                     zoom: 16,
                   ),
                   onMapCreated: (ctrl) => _mapController = ctrl,
-                  onCameraMove: (pos) => _pickedLocation = pos.target,
+                  onCameraMove: (pos) {
+                    _pickedLocation = pos.target;
+                    // Kullanıcı haritayı elle oynatırsa Google ID'yi sıfırlamıyoruz
+                    // Belki konumda ufak düzeltme yapıyordur.
+                  },
                   zoomControlsEnabled: false,
                   myLocationEnabled: true,
                   myLocationButtonEnabled: false,
                 ),
-                // Ortadaki Sabit İğne
                 const Center(
                   child: Padding(
                     padding: EdgeInsets.only(bottom: 30),
@@ -194,40 +272,52 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
                     ),
                   ),
                 ),
-                // "Konumumu Bul" butonu
+
+                // Konumumu Bul Butonu
                 Positioned(
                   bottom: 16,
                   right: 16,
                   child: FloatingActionButton.small(
-                    backgroundColor: cardColor,
+                    heroTag: 'locBtn',
+                    backgroundColor: Colors.white,
                     child: const Icon(Icons.my_location, color: secondaryColor),
-                    onPressed: _locateUser,
+                    onPressed: () {
+                      _selectedGooglePlaceId = null; // Manuel moda geçiş
+                      _locateUser();
+                    },
                   ),
                 ),
-                // Bilgi Etiketi
+
+                // --- MEKAN ARA VE DOLDUR BUTONU ---
                 Positioned(
                   top: 16,
-                  left: 0,
-                  right: 0,
-                  child: Center(
+                  left: 16,
+                  right: 16,
+                  child: GestureDetector(
+                    onTap: _searchPlace, // BURASI OTOMATİK DOLDURMAYA GİDER
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
+                      height: 44,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(20),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(22),
                         boxShadow: [
                           const BoxShadow(color: Colors.black12, blurRadius: 4),
                         ],
                       ),
-                      child: const Text(
-                        'Konumu ayarlamak için haritayı kaydırın',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.search, color: Colors.grey),
+                          SizedBox(width: 8),
+                          Text(
+                            "Mekanı Ara (Otomatik Doldur)...",
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -236,9 +326,9 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
             ),
           ),
 
-          // --- BÖLÜM 2: DETAY FORMU (Alt Kısım) ---
+          // --- FORM ---
           Expanded(
-            flex: 6, // Ekranın %60'ı form
+            flex: 6,
             child: Container(
               decoration: const BoxDecoration(
                 color: bgColor,
@@ -249,7 +339,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // İsim
                     _buildInputLabel("Tuvalet Adı"),
                     TextField(
                       controller: _nameCtrl,
@@ -258,12 +347,11 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Tür Seçimi
                     _buildInputLabel("Türü"),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       decoration: BoxDecoration(
-                        color: cardColor,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: borderColor),
                       ),
@@ -271,12 +359,12 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
                         child: DropdownButton<String>(
                           value: _selectedType,
                           isExpanded: true,
-                          items: _types.map((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value),
-                            );
-                          }).toList(),
+                          items: _types
+                              .map(
+                                (v) =>
+                                    DropdownMenuItem(value: v, child: Text(v)),
+                              )
+                              .toList(),
                           onChanged: (val) =>
                               setState(() => _selectedType = val!),
                         ),
@@ -285,7 +373,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Çalışma Saatleri
                     _buildInputLabel("Çalışma Saatleri"),
                     Row(
                       children: [
@@ -318,7 +405,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
 
                     const SizedBox(height: 24),
 
-                    // Kaydet Butonu
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -327,7 +413,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
-                          elevation: 2,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
@@ -345,7 +430,7 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
                               ),
                       ),
                     ),
-                    const SizedBox(height: 40), // Alt boşluk
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
@@ -355,8 +440,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
       ),
     );
   }
-
-  // --- YARDIMCI WIDGET'LAR ---
 
   Widget _buildInputLabel(String label) {
     return Padding(
@@ -391,63 +474,10 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
   }
 }
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _FilterChip({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isSelected ? const Color(0xFF5AC8FA) : Colors.grey[700];
-    final bgColor = isSelected
-        ? const Color(0xFF5AC8FA).withOpacity(0.15)
-        : Colors.white;
-    final borderColor = isSelected
-        ? const Color(0xFF5AC8FA)
-        : const Color(0xFFE5E5EA);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: borderColor),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isSelected) ...[
-              const Icon(Icons.check, size: 18, color: Color(0xFF5AC8FA)),
-              const SizedBox(width: 4),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? const Color(0xFF007AFF) : Colors.black87,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _TimePickerField extends StatelessWidget {
   final String label;
   final TimeOfDay time;
   final VoidCallback onTap;
-
   const _TimePickerField({
     required this.label,
     required this.time,
@@ -456,40 +486,32 @@ class _TimePickerField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Türkçe saat formatı (HH:mm)
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    final timeStr = "$hour:$minute";
-
+    final timeStr =
+        "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            height: 50,
-            alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE5E5EA)),
+      child: Container(
+        height: 50,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E5EA)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              timeStr,
+              style: const TextStyle(fontSize: 16, color: Colors.black87),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  timeStr,
-                  style: const TextStyle(fontSize: 16, color: Colors.black87),
-                ),
-                Text(
-                  label,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
