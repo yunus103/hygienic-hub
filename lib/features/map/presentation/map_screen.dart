@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../map/data/places_repository.dart';
+import 'filter_screen.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -19,6 +20,7 @@ class _MapScreenState extends State<MapScreen> {
     zoom: 13,
   );
 
+  ToiletFilter _currentFilter = ToiletFilter();
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
   bool _permissionGranted = false;
@@ -71,45 +73,75 @@ class _MapScreenState extends State<MapScreen> {
 
   // --- MARKER LOGIC ---
   void _fetchToiletsAndCreateMarkers() {
+    // Eski listener varsa kapatmak iyi olur ama MVP'de üstüne yazıyoruz, sorun değil.
     FirebaseFirestore.instance.collection('toilets').snapshots().listen((
       snapshot,
     ) {
       final newMarkers = <Marker>{};
 
+      // Debug için
+      // print("Filtre: minRating=${_currentFilter.minRating}, free=${_currentFilter.onlyFree}");
+
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        final id = data['id'] as String? ?? doc.id;
-        final name = data['name'] as String? ?? 'Toilet';
-        final lat = (data['lat'] as num?)?.toDouble();
-        final lng = (data['lng'] as num?)?.toDouble();
 
-        // Puan Hesaplama
+        // --- FİLTRELEME MANTIĞI ---
+
+        // 1. Puan Filtresi
         final ratingSum = (data['ratingSum'] ?? 0) as num;
         final ratingCount = (data['ratingCount'] ?? 0) as num;
         final avg = ratingCount == 0
             ? 0.0
             : (ratingSum / ratingCount).toDouble();
 
-        if (lat == null || lng == null) continue;
+        if (avg < _currentFilter.minRating) continue;
 
-        // Renk Seçimi (HTML tasarımındaki mantık)
-        double hue;
-        if (avg >= 4.0) {
-          hue = BitmapDescriptor.hueGreen; // High Rating
-        } else if (avg >= 2.5) {
-          hue = BitmapDescriptor.hueOrange; // Medium Rating
-        } else {
-          hue = BitmapDescriptor.hueRed; // Low Rating
+        // 2. Olanaklar (Özellikler reportedFeatures veya verifiedFeatures içinde olabilir)
+        // Şimdilik basitleştirilmiş olarak 'reportedFeatures' kullanıyoruz (kullanıcı beyanı)
+        final features =
+            data['reportedFeatures'] as Map<String, dynamic>? ?? {};
+
+        if (_currentFilter.onlyAccessible) {
+          if (features['isAccessible'] != true) continue;
         }
 
-        // Manuel tuvaletler için mavi ton (İsteğe bağlı)
+        if (_currentFilter.hasBabyChange) {
+          if (features['hasBabyChange'] != true) continue;
+        }
+
+        // 3. Ücret Durumu
+        if (!_currentFilter.showAllPrices) {
+          final isFree = features['isFree'] == true;
+          if (_currentFilter.onlyFree && !isFree)
+            continue; // Sadece ücretsiz istiyor ama bu ücretli
+          if (!_currentFilter.onlyFree && isFree)
+            continue; // Sadece ücretli istiyor ama bu ücretsiz
+        }
+
+        // --- FİLTREDEN GEÇTİ, MARKER EKLE ---
+
+        final id = data['id'] as String? ?? doc.id;
+        final lat = (data['lat'] as num?)?.toDouble();
+        final lng = (data['lng'] as num?)?.toDouble();
+
+        if (lat == null || lng == null) continue;
+
+        // Renk Ayarı
+        double hue;
+        if (avg >= 4.0)
+          hue = BitmapDescriptor.hueGreen;
+        else if (avg >= 2.5)
+          hue = BitmapDescriptor.hueOrange;
+        else
+          hue = BitmapDescriptor.hueRed;
+
         if (id.startsWith('manual_')) hue = BitmapDescriptor.hueAzure;
 
         final marker = Marker(
           markerId: MarkerId(id),
           position: LatLng(lat, lng),
           icon: BitmapDescriptor.defaultMarkerWithHue(hue),
-          onTap: () => _onMarkerTapped(id, data), // Direkt gitme, seç!
+          onTap: () => _onMarkerTapped(id, data),
         );
         newMarkers.add(marker);
       }
@@ -228,11 +260,24 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                   child: IconButton(
                     icon: const Icon(Icons.tune, color: AppTheme.textDark),
-                    onPressed: () {
-                      // TODO: Filtre BottomSheet aç
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Filtreleme yakında!")),
+                    onPressed: () async {
+                      // 1. Filtre ekranını aç ve sonucu bekle
+                      final result = await Navigator.push<ToiletFilter>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              FilterScreen(currentFilter: _currentFilter),
+                        ),
                       );
+
+                      // 2. Sonuç varsa filtreyi güncelle ve haritayı yenile
+                      if (result != null) {
+                        setState(() {
+                          _currentFilter = result;
+                        });
+
+                        _fetchToiletsAndCreateMarkers(); // Listener'ı yeniden başlatır ve yeni filtreyle okur.
+                      }
                     },
                   ),
                 ),

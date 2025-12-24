@@ -36,11 +36,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
   TimeOfDay _openTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _closeTime = const TimeOfDay(hour: 22, minute: 0);
 
-  // Özellikler
-  bool _isFree = true;
-  bool _isAccessible = false;
-  bool _hasBabyChange = false;
-
   bool _loading = false;
   String? _error;
 
@@ -120,9 +115,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
         type: _selectedType,
         openingTime: _formatTime(_openTime),
         closingTime: _formatTime(_closeTime),
-        isFree: _isFree,
-        isAccessible: _isAccessible,
-        hasBabyChange: _hasBabyChange,
       );
 
       if (mounted) {
@@ -289,34 +281,6 @@ class _AddManualToiletScreenState extends State<AddManualToiletScreen> {
                               setState(() => _selectedType = val!),
                         ),
                       ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Özellikler
-                    _buildInputLabel("Özellikler"),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _FilterChip(
-                          label: "Ücretsiz",
-                          isSelected: _isFree,
-                          onTap: () => setState(() => _isFree = !_isFree),
-                        ),
-                        _FilterChip(
-                          label: "Engelli Dostu",
-                          isSelected: _isAccessible,
-                          onTap: () =>
-                              setState(() => _isAccessible = !_isAccessible),
-                        ),
-                        _FilterChip(
-                          label: "Bebek Bakım",
-                          isSelected: _hasBabyChange,
-                          onTap: () =>
-                              setState(() => _hasBabyChange = !_hasBabyChange),
-                        ),
-                      ],
                     ),
 
                     const SizedBox(height: 16),

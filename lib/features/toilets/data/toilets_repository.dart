@@ -13,15 +13,12 @@ class ToiletsRepository {
     required String createdBy,
     required String source,
 
-    // --- New Fields ---
-    String? type, // Mall, Restaurant, Park, etc.
-    String? openingTime, // e.g. "08:00"
-    String? closingTime, // e.g. "22:00"
+    String? type,
+    String? openingTime,
+    String? closingTime,
 
-    // ------------------
-    bool? isFree,
-    bool? isAccessible,
-    bool? hasBabyChange, // Added based on design
+    // --- ÖZELLİK PARAMETRELERİNİ KALDIRDIK ---
+    // Artık özellikler sadece yorumlardan veya admin panelinden gelecek.
   }) async {
     final docRef = _firestore.collection('toilets').doc(id);
     final snapshot = await docRef.get();
@@ -39,19 +36,17 @@ class ToiletsRepository {
         'createdAt': now,
         'ratingSum': 0,
         'ratingCount': 0,
-        'verified': false,
-        'verifiedFeatures': null,
 
+        // Doğrulama Alanları
+        'verified': false,
+        'verifiedFeatures': null, // Admin onayı bekliyor
         // Metadata
         'type': type,
         'openingTime': openingTime,
         'closingTime': closingTime,
 
-        'reportedFeatures': {
-          if (isFree != null) 'isFree': isFree,
-          if (isAccessible != null) 'isAccessible': isAccessible,
-          if (hasBabyChange != null) 'hasBabyChange': hasBabyChange,
-        },
+        // Başlangıçta hiç özellik raporu yok
+        'reportedFeatures': {},
       };
 
       await docRef.set(data);
