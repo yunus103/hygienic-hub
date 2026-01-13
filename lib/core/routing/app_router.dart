@@ -6,9 +6,12 @@ import '../../features/reviews/presentation/add_review_screen.dart';
 import '../../features/map/presentation/place_search_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/signup_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
 import '../../features/toilets/presentation/toilet_detail_screen.dart';
-import '../../features/toilets/presentation/add_manual_toilet_screen.dart'; // Import this
+import '../../features/toilets/presentation/add_manual_toilet_screen.dart';
+import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/profile/presentation/settings_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -16,14 +19,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final user = FirebaseAuth.instance.currentUser;
       final loggingIn = state.matchedLocation == '/login';
+      final signingUp = state.matchedLocation == '/signup';
 
-      if (user == null && !loggingIn) return '/login';
-      if (user != null && loggingIn) return '/map';
+      if (user == null && !loggingIn && !signingUp) return '/login';
+      if (user != null && (loggingIn || signingUp)) return '/map';
       return null;
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(path: '/signup', builder: (context, state) => const SignupScreen()),
       GoRoute(path: '/map', builder: (context, state) => const MapScreen()),
+      GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
+      GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
       GoRoute(
         path: '/toilet/:id',
         builder: (context, state) {
@@ -42,11 +49,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/search',
         builder: (context, state) => const PlaceSearchScreen(),
       ),
-      // New Route
       GoRoute(
         path: '/add-manual-toilet',
         builder: (context, state) {
-          // Gelen 'extra' verisini LatLng olarak al
           final latLng = state.extra as LatLng?;
           return AddManualToiletScreen(initialLocation: latLng);
         },
