@@ -309,6 +309,27 @@ class _MapScreenState extends State<MapScreen> {
             right: 16,
             child: Row(
               children: [
+                // Profile Button
+                Container(
+                  height: 48,
+                  width: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.person, color: AppTheme.textDark),
+                    onPressed: () => context.push('/profile'),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Container(
                     height: 48,

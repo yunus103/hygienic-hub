@@ -6,24 +6,64 @@ import '../../features/reviews/presentation/add_review_screen.dart';
 import '../../features/map/presentation/place_search_screen.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../features/auth/presentation/login_screen.dart';
+import '../../features/auth/presentation/signup_screen.dart';
 import '../../features/map/presentation/map_screen.dart';
 import '../../features/toilets/presentation/toilet_detail_screen.dart';
-import '../../features/toilets/presentation/add_manual_toilet_screen.dart'; // Import this
+import '../../features/toilets/presentation/add_manual_toilet_screen.dart';
+import '../../features/profile/presentation/profile_screen.dart';
+import '../../features/profile/presentation/settings_screen.dart';
+import 'dart:async';
+
+// 1. Auth Durumunu Dinleyen Provider
+final authStateProvider = StreamProvider<User?>((ref) {
+  return FirebaseAuth.instance.authStateChanges();
+});
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  // Auth durumunu izle (refreshListenable için gerekli değil ama logic için iyi)
+  final authState = ref.watch(authStateProvider);
+
   return GoRouter(
     initialLocation: '/login',
+    // 2. Yönlendirme (Refresh) Mantığı
+    refreshListenable: GoRouterRefreshStream(
+      FirebaseAuth.instance.authStateChanges(),
+    ),
+
     redirect: (context, state) {
       final user = FirebaseAuth.instance.currentUser;
-      final loggingIn = state.matchedLocation == '/login';
+      final isLoggedIn = user != null;
 
-      if (user == null && !loggingIn) return '/login';
-      if (user != null && loggingIn) return '/map';
+      final isLoggingIn = state.matchedLocation == '/login';
+      final isSigningUp = state.matchedLocation == '/signup';
+
+      // Giriş yapmamışsa ve auth sayfalarında değilse -> Login'e at
+      if (!isLoggedIn && !isLoggingIn && !isSigningUp) {
+        return '/login';
+      }
+
+      // Giriş yapmışsa ve hala auth sayfalarındaysa -> Haritaya at
+      if (isLoggedIn && (isLoggingIn || isSigningUp)) {
+        return '/map';
+      }
+
       return null;
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(
+        path: '/signup',
+        builder: (context, state) => const SignupScreen(),
+      ),
       GoRoute(path: '/map', builder: (context, state) => const MapScreen()),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        builder: (context, state) => const SettingsScreen(),
+      ),
       GoRoute(
         path: '/toilet/:id',
         builder: (context, state) {
@@ -42,11 +82,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/search',
         builder: (context, state) => const PlaceSearchScreen(),
       ),
-      // New Route
       GoRoute(
         path: '/add-manual-toilet',
         builder: (context, state) {
-          // Gelen 'extra' verisini LatLng olarak al
           final latLng = state.extra as LatLng?;
           return AddManualToiletScreen(initialLocation: latLng);
         },
@@ -54,3 +92,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+// GoRouter için Stream Dinleyicisi (Helper Class)
+
+class GoRouterRefreshStream extends ChangeNotifier {
+  GoRouterRefreshStream(Stream<dynamic> stream) {
+    notifyListeners();
+    _subscription = stream.asBroadcastStream().listen(
+      (dynamic _) => notifyListeners(),
+    );
+  }
+
+  late final StreamSubscription<dynamic> _subscription;
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}

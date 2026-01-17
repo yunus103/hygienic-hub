@@ -4,46 +4,47 @@ import 'package:go_router/go_router.dart';
 
 import 'auth_controller.dart';
 
-class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+class SignupScreen extends ConsumerStatefulWidget {
+  const SignupScreen({super.key});
 
   @override
-  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<SignupScreen> createState() => _SignupScreenState();
 }
 
-class _LoginScreenState extends ConsumerState<LoginScreen> {
+class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleSignIn() async {
+  Future<void> _handleSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
     await ref
         .read(authControllerProvider.notifier)
-        .signIn(
+        .signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text,
+          name: _nameController.text.trim(),
         );
 
-    if (mounted && ref.read(authControllerProvider).hasValue) {
-      context.go('/map');
-    }
-  }
-
-  Future<void> _handleAnonymousSignIn() async {
-    await ref.read(authControllerProvider.notifier).signInAnonymously();
-
-    if (mounted && ref.read(authControllerProvider).hasValue) {
-      context.go('/map');
+    final authState = ref.read(authControllerProvider);
+    if (mounted) {
+      if (authState.hasValue && authState.value != null) {
+        context.go('/map');
+      }
     }
   }
 
@@ -52,6 +53,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authState = ref.watch(authControllerProvider);
 
     return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -62,15 +69,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Logo / Title
-                  Icon(
-                    Icons.wc,
-                    size: 100,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(height: 16),
+                  // Title
                   Text(
-                    'Hygienic Hub',
+                    'Kayıt Ol',
                     style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -78,13 +79,37 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Temiz tuvaletleri keşfet ve paylaş',
+                    'Hesabını oluştur ve katkıda bulunmaya başla',
                     style: Theme.of(
                       context,
                     ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
+
+                  // Name Field
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Ad Soyad',
+                      prefixIcon: const Icon(Icons.person),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Ad Soyad gerekli';
+                      }
+                      if (value.length < 2) {
+                        return 'Ad Soyad en az 2 karakter olmalı';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
 
                   // Email Field
                   TextFormField(
@@ -133,8 +158,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                     obscureText: _obscurePassword,
-                    textInputAction: TextInputAction.done,
-                    onFieldSubmitted: (_) => _handleSignIn(),
+                    textInputAction: TextInputAction.next,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
                         return 'Şifre gerekli';
@@ -145,13 +169,50 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       return null;
                     },
                   ),
+                  const SizedBox(height: 16),
+
+                  // Confirm Password Field
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    decoration: InputDecoration(
+                      labelText: 'Şifre Tekrar',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscureConfirmPassword = !_obscureConfirmPassword;
+                          });
+                        },
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    obscureText: _obscureConfirmPassword,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _handleSignUp(),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Şifre tekrarı gerekli';
+                      }
+                      if (value != _passwordController.text) {
+                        return 'Şifreler eşleşmiyor';
+                      }
+                      return null;
+                    },
+                  ),
                   const SizedBox(height: 24),
 
-                  // Sign In Button
+                  // Sign Up Button
                   authState.isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : ElevatedButton(
-                          onPressed: _handleSignIn,
+                          onPressed: _handleSignUp,
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
@@ -159,7 +220,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ),
                           child: const Text(
-                            'Giriş Yap',
+                            'Kayıt Ol',
                             style: TextStyle(fontSize: 16),
                           ),
                         ),
@@ -180,7 +241,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Giriş başarısız. Lütfen bilgilerinizi kontrol edin.',
+                              'Kayıt başarısız. Bu e-posta zaten kullanılıyor olabilir.',
                               style: TextStyle(color: Colors.red[700]),
                             ),
                           ),
@@ -191,42 +252,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Divider
+                  // Sign In Link
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Expanded(child: Divider(color: Colors.grey[400])),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'veya',
-                          style: TextStyle(color: Colors.grey[600]),
-                        ),
+                      Text(
+                        'Zaten hesabın var mı? ',
+                        style: TextStyle(color: Colors.grey[600]),
                       ),
-                      Expanded(child: Divider(color: Colors.grey[400])),
+                      TextButton(
+                        onPressed: () => context.pop(),
+                        child: const Text('Giriş Yap'),
+                      ),
                     ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Sign Up Button
-                  OutlinedButton(
-                    onPressed: () => context.push('/signup'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: const Text(
-                      'Kayıt Ol',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Anonymous Sign In Button
-                  TextButton(
-                    onPressed: _handleAnonymousSignIn,
-                    child: const Text('Misafir olarak devam et'),
                   ),
                 ],
               ),
