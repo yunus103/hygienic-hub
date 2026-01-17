@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../data/places_repository.dart';
+import '../../../core/secrets.dart';
 
 class PlaceSearchScreen extends StatefulWidget {
   const PlaceSearchScreen({super.key});
@@ -21,7 +22,7 @@ class _PlaceSearchScreenState extends State<PlaceSearchScreen> {
   @override
   void initState() {
     super.initState();
-    const apiKey = String.fromEnvironment('PLACES_API_KEY');
+    final apiKey = AppSecrets.googleMapApiKey;
     _places = PlacesRepository(apiKey);
   }
 

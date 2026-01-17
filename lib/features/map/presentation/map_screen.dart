@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../map/data/places_repository.dart';
 import 'filter_screen.dart';
+import '../../../core/secrets.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -46,7 +47,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    const apiKey = String.fromEnvironment('PLACES_API_KEY');
+    final apiKey = AppSecrets.googleMapApiKey;
     _placesRepo = PlacesRepository(apiKey);
 
     _checkLocationPermission();
