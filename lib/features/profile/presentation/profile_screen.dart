@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import '../../../../core/theme/app_theme.dart';
 import 'profile_controller.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -12,377 +14,312 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = FirebaseAuth.instance.currentUser;
     final profileAsync = ref.watch(currentUserProfileProvider);
-    final statsAsync = ref.watch(userStatsProvider);
+    final reviewsCountAsync = ref.watch(userStatsProvider);
+    final reviewsAsync = ref.watch(userReviewsProvider);
 
     if (user == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Profil')),
-        body: const Center(child: Text('Giriş yapılmamış')),
-      );
+      return const Scaffold(body: Center(child: Text('Giriş yapılmamış')));
     }
 
     return Scaffold(
+      backgroundColor: AppTheme.bgLight,
       appBar: AppBar(
-        title: const Text('Profil'),
+        title: const Text('Profilim'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        titleTextStyle: const TextStyle(
+          color: AppTheme.textDark,
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.settings),
+            icon: const Icon(Icons.settings, color: AppTheme.textDark),
             onPressed: () => context.push('/settings'),
           ),
         ],
       ),
-      body: profileAsync.when(
-        data: (profile) {
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                // Profile Header
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Theme.of(context).colorScheme.primary,
-                        Theme.of(context).colorScheme.primaryContainer,
-                      ],
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // --- HEADER KISMI ---
+            Container(
+              width: double.infinity,
+              color: Colors.white,
+              padding: const EdgeInsets.only(bottom: 24),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  // Profil Resmi
+                  profileAsync.when(
+                    data: (profile) => CircleAvatar(
+                      radius: 45,
+                      backgroundColor: AppTheme.primary.withOpacity(0.1),
+                      backgroundImage: profile?['photoUrl'] != null
+                          ? NetworkImage(profile!['photoUrl'])
+                          : null,
+                      child: profile?['photoUrl'] == null
+                          ? const Icon(
+                              Icons.person,
+                              size: 50,
+                              color: AppTheme.primary,
+                            )
+                          : null,
+                    ),
+                    loading: () => const CircleAvatar(
+                      radius: 45,
+                      child: CircularProgressIndicator(),
+                    ),
+                    error: (_, __) => const CircleAvatar(
+                      radius: 45,
+                      child: Icon(Icons.error),
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      // Profile Picture
-                      CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Colors.white,
-                        backgroundImage: profile?['photoUrl'] != null
-                            ? NetworkImage(profile!['photoUrl'])
-                            : null,
-                        child: profile?['photoUrl'] == null
-                            ? Icon(
-                                Icons.person,
-                                size: 50,
-                                color: Theme.of(context).colorScheme.primary,
-                              )
-                            : null,
-                      ),
-                      const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
-                      // User Name
-                      Text(
-                        profile?['name'] ?? user.displayName ?? 'Kullanıcı',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                  // İsim
+                  profileAsync.when(
+                    data: (profile) => Text(
+                      profile?['name'] ?? user.displayName ?? 'Kullanıcı',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textDark,
                       ),
-                      const SizedBox(height: 8),
+                    ),
+                    loading: () => const SizedBox(height: 20),
+                    error: (_, __) => const Text('Hata'),
+                  ),
 
-                      // User Email
-                      Text(
-                        user.email ?? '',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.white70,
-                        ),
+                  const SizedBox(height: 4),
+                  // Email
+                  Text(
+                    user.email ?? '',
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // --- İSTATİSTİK KARTI (Sadece Yorum Sayısı) ---
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withOpacity(0.1),
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(height: 16),
-
-                      // Points Badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+                      child: const Icon(Icons.rate_review, color: Colors.blue),
+                    ),
+                    const SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Toplam Yorum",
+                          style: TextStyle(color: Colors.grey, fontSize: 13),
                         ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.star,
-                              color: Colors.amber,
-                              size: 20,
+                        reviewsCountAsync.when(
+                          data: (count) => Text(
+                            "$count",
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
                             ),
-                            const SizedBox(width: 8),
+                          ),
+                          loading: () => const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          error: (_, __) => const Text("-"),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // --- YORUMLAR BAŞLIĞI ---
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Son Yorumlarım",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textDark,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // --- YORUMLAR LİSTESİ ---
+            reviewsAsync.when(
+              data: (reviews) {
+                if (reviews.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 40),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          size: 48,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          "Henüz hiç yorum yapmadınız.",
+                          style: TextStyle(color: Colors.grey[500]),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                  itemCount: reviews.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) {
+                    final review = reviews[index];
+                    final date = review['createdAt'] != null
+                        ? (review['createdAt'] as Timestamp).toDate()
+                        : DateTime.now();
+
+                    return GestureDetector(
+                      onTap: () {
+                        // Yorum yapılan tuvalete git
+                        if (review['toiletId'] != null &&
+                            review['toiletId'].toString().isNotEmpty) {
+                          context.push('/toilet/${review['toiletId']}');
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.03),
+                              blurRadius: 5,
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    review['toiletName'] ?? 'Tuvalet',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.star,
+                                        size: 14,
+                                        color: Colors.amber,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        (review['overall'] ??
+                                                review['rating'] ??
+                                                0.0)
+                                            .toString(),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                          color: Colors.amber,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
                             Text(
-                              '${profile?['points'] ?? 0} Puan',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
+                              review['comment'] ?? '',
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontSize: 14,
+                              ),
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              DateFormat('dd MMM yyyy, HH:mm').format(date),
+                              style: TextStyle(
+                                color: Colors.grey[400],
+                                fontSize: 12,
                               ),
                             ),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-
-                // Statistics
-                statsAsync.when(
-                  data: (stats) => Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
-                            icon: Icons.wc,
-                            label: 'Tuvalet',
-                            count: stats['toiletsCount'] ?? 0,
-                            color: Colors.blue,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: _StatCard(
-                            icon: Icons.rate_review,
-                            label: 'Yorum',
-                            count: stats['reviewsCount'] ?? 0,
-                            color: Colors.green,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  loading: () => const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: CircularProgressIndicator(),
-                  ),
-                  error: (_, __) => const SizedBox(),
-                ),
-
-                // Tabs for Contributions and Reviews
-                const SizedBox(height: 16),
-                DefaultTabController(
-                  length: 2,
-                  child: Column(
-                    children: [
-                      const TabBar(
-                        tabs: [
-                          Tab(text: 'Katkılarım'),
-                          Tab(text: 'Yorumlarım'),
-                        ],
-                      ),
-                      SizedBox(
-                        height: 400,
-                        child: TabBarView(
-                          children: [_ContributionsTab(), _ReviewsTab()],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, stack) => Center(child: Text('Hata: $error')),
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final int count;
-  final Color color;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.count,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, color: color, size: 32),
-          const SizedBox(height: 8),
-          Text(
-            count.toString(),
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-        ],
-      ),
-    );
-  }
-}
-
-class _ContributionsTab extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final toiletsAsync = ref.watch(userToiletsProvider);
-
-    return toiletsAsync.when(
-      data: (toilets) {
-        if (toilets.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.wc, size: 64, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'Henüz tuvalet eklemediniz',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: toilets.length,
-          itemBuilder: (context, index) {
-            final toilet = toilets[index];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  child: const Icon(Icons.wc, color: Colors.white),
-                ),
-                title: Text(toilet['name'] ?? 'İsimsiz Tuvalet'),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(toilet['address'] ?? ''),
-                    if (toilet['createdAt'] != null)
-                      Text(
-                        DateFormat(
-                          'dd.MM.yyyy HH:mm',
-                        ).format((toilet['createdAt'] as dynamic).toDate()),
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                  ],
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.star, size: 16, color: Colors.amber),
-                    const SizedBox(width: 4),
-                    Text(
-                      toilet['avgRating']?.toStringAsFixed(1) ?? 'N/A',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                onTap: () {
-                  context.push('/toilet/${toilet['id']}');
-                },
+                    );
+                  },
+                );
+              },
+              loading: () => const Padding(
+                padding: EdgeInsets.only(top: 40),
+                child: CircularProgressIndicator(),
               ),
-            );
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Hata: $error')),
-    );
-  }
-}
-
-class _ReviewsTab extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final reviewsAsync = ref.watch(userReviewsProvider);
-
-    return reviewsAsync.when(
-      data: (reviews) {
-        if (reviews.isEmpty) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.rate_review, size: 64, color: Colors.grey),
-                SizedBox(height: 16),
-                Text(
-                  'Henüz yorum yapmadınız',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ],
-            ),
-          );
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: reviews.length,
-          itemBuilder: (context, index) {
-            final review = reviews[index];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Colors.green,
-                  child: const Icon(Icons.rate_review, color: Colors.white),
-                ),
-                title: Text(review['toiletName'] ?? 'Tuvalet'),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        ...List.generate(5, (i) {
-                          return Icon(
-                            i < (review['rating'] ?? 0)
-                                ? Icons.star
-                                : Icons.star_border,
-                            size: 16,
-                            color: Colors.amber,
-                          );
-                        }),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    if (review['comment'] != null &&
-                        review['comment'].toString().isNotEmpty)
-                      Text(
-                        review['comment'],
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    if (review['createdAt'] != null)
-                      Text(
-                        DateFormat(
-                          'dd.MM.yyyy HH:mm',
-                        ).format((review['createdAt'] as dynamic).toDate()),
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                  ],
-                ),
-                onTap: () {
-                  context.push('/toilet/${review['toiletId']}');
-                },
+              error: (e, s) => Padding(
+                padding: const EdgeInsets.only(top: 40),
+                child: Text("Hata: $e"),
               ),
-            );
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Hata: $error')),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

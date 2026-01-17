@@ -7,6 +7,20 @@ import '../../auth/presentation/auth_controller.dart';
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
+  String _getInitials(User? user) {
+    if (user == null) return 'U';
+    final name = user.displayName;
+    final email = user.email;
+
+    if (name != null && name.isNotEmpty) {
+      return name.substring(0, 1).toUpperCase();
+    }
+    if (email != null && email.isNotEmpty) {
+      return email.substring(0, 1).toUpperCase();
+    }
+    return 'U';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = FirebaseAuth.instance.currentUser;
@@ -29,11 +43,8 @@ class SettingsScreen extends ConsumerWidget {
             ListTile(
               leading: CircleAvatar(
                 child: Text(
-                  (user.displayName?.substring(0, 1) ??
-                          user.email?.substring(0, 1) ??
-                          'U')
-                      .toUpperCase(),
-                ),
+                  _getInitials(user),
+                ), // Güvenli fonksiyonu burada kullandık
               ),
               title: Text(user.displayName ?? 'Kullanıcı'),
               subtitle: Text(user.email ?? ''),
@@ -234,11 +245,10 @@ class SettingsScreen extends ConsumerWidget {
           ),
           ElevatedButton(
             onPressed: () async {
+              // Dialogu kapat
+              Navigator.of(context).pop();
+              // Çıkış yap (Router bunu otomatik algılayıp login'e atacak)
               await ref.read(authControllerProvider.notifier).signOut();
-              if (context.mounted) {
-                Navigator.of(context).pop();
-                context.go('/login');
-              }
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
             child: const Text('Çıkış Yap'),
